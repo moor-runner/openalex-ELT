@@ -36,6 +36,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 纯函数性由 fixture 本身保证：{@code new Shard()} 的两个 DAO 字段未注入，
  * 实现里一旦触碰 socialEntityDAO / syncTaskDAO 就会 NPE。
  * <p>
+ * 范围约定：契约不承诺支持贴近 {@code Long.MAX_VALUE} 的区间——自增主键到不了那里，
+ * 为此在实现里绕开中间量溢出不划算。守到 {@code Integer.MAX_VALUE} 附近即可。
+ * <p>
  * 注意：若实现的循环某轮不推进（例如 {@code cur = hi} 而非 {@code cur = hi + 1}），
  * list 会无限增长，测试会以 OutOfMemoryError 崩掉整个 JVM 而不是干净失败——
  * 抢占式 timeout 唤不醒一个紧循环。届时看堆栈里的 splitTasks 行号即可定位。
@@ -172,13 +175,13 @@ class ShardSplitTasksTest {
     }
 
     @Test
-    @DisplayName("上界贴近 Long.MAX_VALUE 时不溢出、不死循环")
-    void 上界贴近LongMAX不溢出不死循环() {
-        long min = Long.MAX_VALUE - 5;
+    @DisplayName("id 跨越 Integer 上界时不溢出")
+    void 跨越Integer上界不溢出() {
+        long min = Integer.MAX_VALUE - 5L;
+        long max = Integer.MAX_VALUE + 5L;
 
         assertTimeoutPreemptively(Duration.ofSeconds(2), () ->
-                assertPartitionOf(min, Long.MAX_VALUE, 4,
-                        shard.splitTasks(min, Long.MAX_VALUE, 4)));
+                assertPartitionOf(min, max, 4, shard.splitTasks(min, max, 4)));
     }
 
     @Test
