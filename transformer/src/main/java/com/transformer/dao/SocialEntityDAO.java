@@ -39,4 +39,11 @@ public class SocialEntityDAO{
             return Optional.of(new MinMax(min, rs.getLong("max_id")));
         });
     }
+
+    /**
+     * 查询[min,max]范围内的所有SocialEntity数据，添加超时重试逻辑
+     */
+    public List<SocialEntity> selectBatch(long min,long max){
+
+    }
 }

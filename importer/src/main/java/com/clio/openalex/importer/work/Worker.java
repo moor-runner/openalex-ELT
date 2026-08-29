@@ -37,6 +37,7 @@ import com.clio.openalex.importer.exception.RetryableException;
 import com.clio.openalex.importer.plan.Entity;
 import com.clio.openalex.importer.plan.FileTask;
 import com.clio.openalex.importer.plan.PlanArgsParser;
+import com.common.entity.SocialEntity;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

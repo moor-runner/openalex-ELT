@@ -79,4 +79,10 @@ public class SyncTaskDAO{
             }
         });
     }
+    /**
+     * 在SyncTask表中选择一个处于Pendding状态或者处于僵尸状态的Task，添加超时重试逻辑
+     */
+    public Optional<SyncTask> selectOne(){
+
+    }
 }

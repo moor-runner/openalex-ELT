@@ -2,6 +2,8 @@ package com.clio.openalex.importer.work;
 
 import java.util.List;
 
+import com.common.entity.SocialEntity;
+
 /**
  * transform 一个批次的产物：两条不同类型的通道。
  *

@@ -1,4 +1,4 @@
-package com.clio.openalex.importer.work;
+package com.common.entity;
 
 import java.time.Instant;
 
