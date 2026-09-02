@@ -7,3 +7,8 @@ spring:
     password: "1234"
     hikari:
       maximum-pool-size: 10
+  elasticsearch:
+    uris: https://localhost:9200
+    username: elastic
+    password: 123456
+
