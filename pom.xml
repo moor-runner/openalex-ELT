@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.clio.openalex</groupId>
+    <artifactId>openalex-sync</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>openalex-sync</name>
+    <description>
+        纯聚合 pom, 只负责把三个模块编入同一个 reactor, 不做父继承。
+        transformer 已继承 spring-boot-starter-parent, 不能再有第二个 parent,
+        因此这里不声明 dependencies/dependencyManagement, 三个子模块的 pom 保持独立。
+        常用: mvn -pl importer -am package   (只构建 importer 及其依赖 common)
+    </description>
+
+    <modules>
+        <module>common</module>
+        <module>importer</module>
+        <module>transformer</module>
+    </modules>
+</project>
