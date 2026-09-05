@@ -30,7 +30,7 @@ public class Scheduler{
     ExecutorService threadPool = Executors.newFixedThreadPool(THREAD_SIZE);
 
     private static final Logger log = LoggerFactory.getLogger(Scheduler.class);
-
+    //TODO添加转换停止开关
     class SyncSwitch{
         //AQS共享模式制作的开关
     }
