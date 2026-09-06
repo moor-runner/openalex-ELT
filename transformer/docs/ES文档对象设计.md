@@ -215,6 +215,67 @@ converter 是**显式投影**而非 raw 透传——OpenAlex 新增字段传不�
 
 无对应 converter 的 `(platform, entity_type)`：显式配置本次同步支持的白名单，不在白名单内的按正常路径跳过；在白名单内却找不到 converter 的抛 Fatal（配置错误，不进死信表）。
 
+### 修订 2026-09-06：converter 输出改为 `Map<String,Object>`
+
+上一节原文一字不动保留，作为推导轨迹。自本节起，converter 契约以此节为准。
+
+**新契约**：`Map<String,Object> convert(SocialEntity)`。仍为纯函数、无副作用、可单测。
+
+#### 原理由中经复核不成立的部分
+
+| 原文/相关理由 | 复核结论 |
+|---|---|
+| 「输出用 `record`，不可变——Scheduler 是 16 线程并发」 | **不成立**。converter 的输出在单个线程内创建、当场序列化、不跨线程共享，不可变性在这条路径上换不到任何实际的并发安全。 |
+| 「record 能在编译期挡住字段名拼写错误」（原文未写，为免日后重议一并记录） | **只在特定前提下成立**。record 组件名是 camelCase，JSON key 是 snake_case，只有配 snake_case 命名策略、不写 `@JsonProperty` 时才构成编译期检查；一旦逐字段写 `@JsonProperty("entity_id")`，该字符串与 `map.put("entity_id", …)` 是同一种风险。 |
+
+#### 改用 Map 的理由
+
+1. **key 所见即所得**。`put` 什么，`_source` 里就是什么。没有命名策略这层间接，也不必确认 `JacksonJsonpMapper` 内部用的是哪个 `ObjectMapper`、有没有配 snake_case。
+2. **「缺失字段一律省略」表达更直接**。规范化规则第 6 条在 Map 里就是「不 put」，不依赖 `@JsonInclude(NON_NULL)` 生效。
+3. 省掉 `AuthorDoc` / `Ids` / `Institution` / `Affiliation` / `Topic` 五个类型的编写与维护。
+
+#### 不随之放松的部分（仍是契约）
+
+**「显式投影而非 raw 透传」不变。** 换 Map 只改变载体，不改变投影语义——这是根上 `dynamic: strict` 能成立的前提。
+
+Map 的 value **只允许**以下类型：
+
+| 目标字段形态 | value 类型 |
+|---|---|
+| 标量字符串 | `String` |
+| 标量数值 | `Integer` / `Float`（不用基本类型；缺失时不 put） |
+| 日期（`updated_at`） | ISO-8601 `String`；或确认 `JacksonJsonpMapper` 已注册 `JavaTimeModule` 后用 `Instant` |
+| 字符串数组（`name_variants`、`lineage`） | `List<String>` |
+| 年份数组（`affiliations[].years`） | `List<Short>` |
+| 单个子对象（`ids`、`primary_topic`） | `Map<String,Object>` |
+| 对象数组（`last_known_institutions`、`affiliations`、`topics`） | `List<Map<String,Object>>` |
+
+**明确禁止**两种 value：
+
+- **`JsonNode`（含 `ObjectNode` / `ArrayNode`）**——等于在子对象层把 raw 透传放回来。已逐字段核对：本设计中**没有任何一个字段的 raw 子树形状等于目标形状**。`ids` 多出 `openalex` / `orcid`（strict 下报错），机构 id 带 URL 前缀且多出 `ror`，`affiliations` 的 raw 形状是 `[{institution:{…}, years}]`，`topics` 是三层对象且带 `count`。且 `ObjectNode` 可变。
+- **承载 JSON 的 `String`**（如 `SocialEntity.getData()` 的原文）——会被序列化成 JSON 字符串字面量而非对象。strict 下该项 400；非 strict 下被静默索引成 `text`，mapping 定死后只能 reindex。
+
+规范化规则 1–6 全部不变，只是作用在 Map 的构造过程上。
+
+#### 代价与强制补偿
+
+丢掉的是编译器对字段名与类型的兜底。失败模式是**静默的**：key 拼错 → `strict_dynamic_mapping_exception` → 按上文 bulk 响应分类归 Poisoned → 每一条都进死信表，而 HTTP 全程 200、不抛异常，跑完千万级才从计数器上察觉。
+
+**故新增一条必过单测，与幂等性单测同级，不是可选项**：
+
+> 取一条样本 `SocialEntity`，`convert` 后断言 `doc.keySet()` 等于预期 key 全集（子对象逐层断言），并断言每个 value 的运行时类型落在上表允许范围内。
+
+这条单测是本次改动的**前提条件**而非后续优化——没有它，Map 方案不具备任何字段名保障。
+
+#### 连带影响
+
+| 位置 | 原文 | 改为 |
+|---|---|---|
+| `### bulk meta` 的 `_id` 一行 | `doc.entityId()` | `doc.get("entity_id")` |
+| 上一节死信同序列表 | `List<AuthorDoc> docs` | `List<Map<String,Object>> docs` |
+
+其余各节——字段规格、ES 类型、mapping、bulk meta 四项、响应分类、不入索引清单、建 index 决定——**均不受影响**：它们描述的是索引与报文，与 Java 侧载体无关。
+
 ### 明确不入索引的（记录决定，免得以后重议）
 
 | 字段 | 原因 |
@@ -242,6 +303,47 @@ converter 是**显式投影**而非 raw 透传——OpenAlex 新增字段传不�
 
 字段存储的四个开关相互正交，本设计各字段按此组合：`index`（倒排，决定能否 matching）、`doc_values`（列存，决定能否排序聚合）、`_source`（决定能否返回）、`store`（一般不用）。`name_variants` 是「index 开、`_source` 排除」，`ids.scopus` 是「index 关、`_source` 留」。
 
+
+### 修订 2026-09-06：新增 `name_normalizer`，及建 index 时一并确定的项
+
+上一节原文保留。本节补齐上一节留下的空缺，并记录首次建 index 时定下的若干项。
+
+#### 新增 `name_normalizer`
+
+上一节只定义了 `id_normalizer`（lowercase），而「文档字段 —— 人名」一节中 `display_name.keyword` 写的是「keyword + normalizer」，未指明是哪一个。
+
+**定为**：`name_normalizer` = `lowercase` + `asciifolding`，filter 链与 `name_analyzer` 一致。`display_name.keyword` 用它，不复用 `id_normalizer`。
+
+理由：**同一个值的两个索引视图行为必须一致**。`display_name` 走 `name_analyzer` 已做 asciifolding——主检索输 `Nicola` 能搜到 `Nicolá Jones`；若 `.keyword` 只 lowercase，同一字段上就会出现「模糊搜能中、精确匹配反而不中」。且重名消歧需在 `.keyword` 上做 terms 聚合找出同名作者，不 fold 会把 `Müller` 与 `Muller` 分成两个桶——二者本就同名，应合并。
+
+normalizer 只作用于倒排索引中的 term，不影响 `_source`；返回给调用方的仍是原始拼写。
+
+沿用 `id_normalizer` 的字段不变：`entity_id`、`orcid`、`ids.twitter`、各机构 `id`、`lineage`、topic `id`。ID 不做 asciifolding——本就不含变音符，folding 无作用，保持最小定义。
+
+#### 建 index 时一并确定的项
+
+| 项 | 决定 | 理由 |
+|---|---|---|
+| 机构与 `primary_topic` 的 `display_name.text` 子字段用哪个 analyzer | `name_analyzer` | lowercase + asciifolding 是通用文本处理，机构名同样有变音符（`Université`、`Zürich`），不必另建一个 |
+| `display_name.prefix` 的 analyzer | `name_analyzer` | 与主字段对齐；否则自动补全吃不了变音符，与主检索行为不一致 |
+| `subfield` / `field` / `domain` / `topics.display_name` 是否加 normalizer | 不加 | 它们只用于聚合与展示，过滤走 id（见「文档字段 —— 主题」末段），聚合不需要 normalizer |
+| keyword 的 `ignore_above` | 一律不写 | 上一节已定性为静默失败；显式 mapping 的 keyword 默认无此参数，动态映射模板的 256 默认值不适用 |
+
+#### 建 index 执行方式（不进 Java 主流程）
+
+mapping 文件位置：`transformer/src/main/resources/es/mapping/openalex_authors.json`，按 `{platform}_{entity_type}.json` 命名，与 index 名一致。
+
+文件进仓库的理由：它是本集合 schema 的**唯一声明**（converter 侧已无 Java 类型，见「修订 2026-09-06：converter 输出改为 `Map<String,Object>`」）；一致性单测要读它；mapping 变更需可 diff、可追溯，配合 alias v1→v2 的 reindex 流程。
+
+但**建 index 的动作不由 Scheduler / EsWriter 在运行时执行**，一次性手工执行或走独立运维入口。三条理由：
+
+1. 16 线程并发，创建时序不确定，会互相撞。
+2. shard 数、replica 数、`refresh_interval` 是部署参数，不该由数据写入程序决定。
+3. **最关键**：应用若能自动建 index，则 index 名打错时会静默建出一个新 index 而非报错——与「`_id` 省略是静默故障」同类，全程 HTTP 200，数据落进无人知晓的 index。
+
+`aliases` 写在建 index 请求体内（本文件已含），使上一节「alias 在建 index 当时不做、日后代价翻倍」不可能被遗漏。
+
+**`number_of_shards` 不写进本文件**：它属部署参数，但**建 index 后不可更改**，须在执行建 index 时按数据规模显式决定，不可依赖 ES 默认值。
 ### 待定项
 
 | 项 | 现状 | 触发条件 |

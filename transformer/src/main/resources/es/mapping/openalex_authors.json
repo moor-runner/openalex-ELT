@@ -1,0 +1,121 @@
+{
+  "aliases": {
+    "openalex_authors": {}
+  },
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "name_analyzer": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase", "asciifolding"]
+        }
+      },
+      "normalizer": {
+        "id_normalizer": {
+          "type": "custom",
+          "filter": ["lowercase"]
+        },
+        "name_normalizer": {
+          "type": "custom",
+          "filter": ["lowercase", "asciifolding"]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "_source": {
+      "excludes": ["name_variants"]
+    },
+    "properties": {
+      "entity_id": { "type": "keyword", "normalizer": "id_normalizer" },
+      "orcid":     { "type": "keyword", "normalizer": "id_normalizer" },
+      "ids": {
+        "properties": {
+          "mag":       { "type": "keyword" },
+          "twitter":   { "type": "keyword", "normalizer": "id_normalizer" },
+          "scopus":    { "type": "keyword", "index": false },
+          "wikipedia": { "type": "keyword", "index": false }
+        }
+      },
+
+      "display_name": {
+        "type": "text",
+        "analyzer": "name_analyzer",
+        "fields": {
+          "keyword": { "type": "keyword", "normalizer": "name_normalizer" },
+          "prefix":  { "type": "search_as_you_type", "analyzer": "name_analyzer" }
+        }
+      },
+      "name_variants": {
+        "type": "text",
+        "analyzer": "name_analyzer",
+        "norms": false
+      },
+
+      "last_known_institutions": {
+        "properties": {
+          "id": { "type": "keyword", "normalizer": "id_normalizer" },
+          "display_name": {
+            "type": "keyword",
+            "fields": {
+              "text": { "type": "text", "analyzer": "name_analyzer" }
+            }
+          },
+          "country_code": { "type": "keyword" },
+          "type":         { "type": "keyword" },
+          "lineage":      { "type": "keyword", "normalizer": "id_normalizer" }
+        }
+      },
+
+      "affiliations": {
+        "type": "nested",
+        "properties": {
+          "id": { "type": "keyword", "normalizer": "id_normalizer" },
+          "display_name": {
+            "type": "keyword",
+            "fields": {
+              "text": { "type": "text", "analyzer": "name_analyzer" }
+            }
+          },
+          "country_code": { "type": "keyword" },
+          "type":         { "type": "keyword" },
+          "years":        { "type": "short" }
+        }
+      },
+
+      "primary_topic": {
+        "properties": {
+          "id": { "type": "keyword", "normalizer": "id_normalizer" },
+          "display_name": {
+            "type": "keyword",
+            "fields": {
+              "text": { "type": "text", "analyzer": "name_analyzer" }
+            }
+          },
+          "subfield": { "type": "keyword" },
+          "field":    { "type": "keyword" },
+          "domain":   { "type": "keyword" }
+        }
+      },
+      "topics": {
+        "properties": {
+          "id":           { "type": "keyword", "normalizer": "id_normalizer" },
+          "display_name": { "type": "keyword" },
+          "subfield":     { "type": "keyword" },
+          "field":        { "type": "keyword" },
+          "domain":       { "type": "keyword" }
+        }
+      },
+
+      "works_count":       { "type": "integer" },
+      "cited_by_count":    { "type": "integer" },
+      "h_index":           { "type": "integer" },
+      "i10_index":         { "type": "integer" },
+      "mean_citedness_2y": { "type": "float" },
+
+      "updated_at": { "type": "date" }
+    }
+  }
+}
